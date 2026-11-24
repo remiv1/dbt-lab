@@ -1,0 +1,13 @@
+version: 2
+
+sources:
+  - name: ecommerce
+    description: "Données brutes du système e-commerce"
+    schema: raw
+
+    tables:
+      - name: customers
+        description: "Clients bruts"
+
+      - name: orders
+        description: "Commandes brutes"
