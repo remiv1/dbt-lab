@@ -1,6 +1,16 @@
 # dbt-lab
 
-Ce dépôt est un **projet d’apprentissage** destiné à expérimenter _**dbt v1**_ sur un petit domaine e-commerce. Il ne représente pas un système réel, un jeu de données de production ni une architecture prête à être déployée telle quelle.
+Ce dépôt est un **projet d’apprentissage** destiné à expérimenter dbt sur un petit domaine e-commerce. Il ne représente pas un système réel, un jeu de données de production ni une architecture prête à être déployée telle quelle.
+
+## Évolution de dbt et des moteurs
+
+Le parcours d'apprentissage comprend plusieurs étapes :
+
+- **V1 : dbt Core 1.x avec PostgreSQL.** Les scripts `init-db.sql` et `launch-postgres.sh` conservent cet ancien parcours local.
+- **V2 : dbt 2.x avec DuckDB.** dbt V2 fournit un driver DuckDB natif ; aucun adaptateur Python séparé n'est requis.
+- **Configuration actuelle :** la CI utilise `dbt==2.0.13` et DuckDB. Le projet local peut utiliser le fichier `ecommerce/dev.duckdb`.
+
+Le retour à DuckDB a aussi modifié la CI et le test d'intégration : ils n'utilisent plus de service PostgreSQL ni `psql`.
 
 ## Objectifs pédagogiques
 
@@ -11,15 +21,15 @@ Le projet permet de pratiquer les bases d’un projet dbt :
 - utiliser des vues, des tables et un modèle incrémental ;
 - ajouter des tests de données, un test SQL personnalisé et un snapshot ;
 - écrire et appeler des macros Jinja ;
-- vérifier un chargement incrémental sur PostgreSQL avec des états successifs des données.
+- vérifier un chargement incrémental sur DuckDB avec des états successifs des données.
 
 ## Organisation
 
 ```text
 .
-├── init-db.sql                    # Schéma raw et données d'exemple PostgreSQL
-├── launch-postgres.sh             # Démarrage local de PostgreSQL avec Podman
-├── .github/workflows/ci.yml       # Construction dbt et tests dans GitHub Actions
+├── init-db.sql                    # Initialisation PostgreSQL de l'exercice V1
+├── launch-postgres.sh             # PostgreSQL local pour l'exercice V1
+├── .github/workflows/ci.yml       # CI dbt V2 avec DuckDB
 └── ecommerce/                     # Projet dbt
     ├── models/
     │   ├── staging/               # Nettoyage et typage des sources raw
@@ -28,64 +38,75 @@ Le projet permet de pratiquer les bases d’un projet dbt :
     ├── tests/                     # Tests SQL personnalisés
     ├── snapshots/                 # Exemple de snapshot dbt
     ├── seeds/                     # Fichiers CSV d'exemple
-    └── integration_tests/         # Fixtures et test incrémental PostgreSQL
+    └── integration_tests/         # Fixtures et test incrémental DuckDB
 ```
 
 Le flux principal est :
 
 ```text
-PostgreSQL raw → modèles staging (vues) → modèles marts (tables)
+DuckDB raw → modèles staging (vues) → modèles marts (tables)
 ```
 
 Les modèles `stg_customers` et `stg_orders` normalisent les champs issus des sources. Les marts comprennent notamment `customer_orders` (indicateurs par client), `prospects` (clients sans commande) et `orders_incremental` (suivi incrémental des commandes à partir de leur `row_hash`). Les dossiers `analyses/`, `seeds/`, `snapshots/` et `macros/` servent à explorer d'autres fonctionnalités de dbt.
 
 ## Prérequis
 
-- Podman pour lancer PostgreSQL localement ;
-- Python et dbt Core avec l'adaptateur PostgreSQL. La CI utilise `dbt-core==1.12.3` et `dbt-postgres==1.11.0` ;
-- `psql` pour initialiser et inspecter la base.
+- Python 3.12 (dbt V2 nécessite Python 3.10 ou plus) ;
+- dbt V2 `2.0.13`, installé dans le virtualenv du dépôt ;
+- `jq` pour le test d'intégration local. Il est disponible sur les runners GitHub Actions de la CI.
 
-Les identifiants définis par le conteneur local sont réservés à cet exercice : utilisateur `dbt`, mot de passe `dbt`, base `ecommerce`. Ne pas les réutiliser dans un environnement partagé ou réel.
+DuckDB est intégré à dbt V2. La CI utilise un fichier DuckDB temporaire et n'a besoin ni de Podman ni d'un serveur de base de données.
 
 ## Démarrage local
 
-Depuis la racine du dépôt, démarrer PostgreSQL :
+Depuis la racine du dépôt, créer un virtualenv et y installer dbt :
 
 ```bash
-./launch-postgres.sh
+python3 -m venv .venv
+.venv/bin/python -m pip install dbt==2.0.13
+source .venv/bin/activate
 ```
 
-Initialiser le schéma `raw` et ses données d'exemple :
+Configurer le profil `ecommerce` dans `~/.dbt/profiles.yml` (ou le répertoire défini par `DBT_PROFILES_DIR`). Remplacer le chemin par un chemin absolu vers `ecommerce/dev.duckdb` :
 
-```bash
-PGPASSWORD=dbt psql \
-  -h localhost -p 5432 -U dbt -d ecommerce \
-  -v ON_ERROR_STOP=1 -f init-db.sql
+```yaml
+ecommerce:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: /chemin/absolu/vers/dbt-lab/ecommerce/dev.duckdb
+      schema: main
+    integration:
+      type: duckdb
+      path: /chemin/absolu/vers/dbt-lab/ecommerce/dev.duckdb
+      schema: dbt_integration
 ```
 
-Configurer ensuite le profil dbt `ecommerce` dans `~/.dbt/profiles.yml` (ou dans le répertoire indiqué par `DBT_PROFILES_DIR`). Il doit fournir une sortie PostgreSQL, par exemple une cible `ci` avec `host: localhost`, `port: 5432`, `user: dbt`, `password: dbt`, `dbname: ecommerce` et `schema: dbt`. Le test d'intégration utilise en plus une cible nommée `integration`.
-
-Puis lancer les commandes depuis le projet dbt :
+Depuis `ecommerce/`, construire les modèles et charger les seeds dans le schéma brut configuré :
 
 ```bash
-cd ecommerce
 dbt debug
-dbt build
+dbt build --vars '{raw_schema: main_raw}'
 ```
 
-`dbt build` exécute les modèles et les tests associés. Pour travailler séparément : `dbt run` construit les modèles, `dbt test` exécute les tests et `dbt snapshot` met à jour les snapshots configurés.
+`dbt build` construit les seeds, modèles et tests sélectionnés. Pour travailler séparément : `dbt seed`, `dbt run`, `dbt test` et `dbt snapshot`.
 
 ## Test d'intégration incrémental
 
-Depuis `ecommerce/`, avec PostgreSQL disponible et la variable `PGPASSWORD` définie :
+Depuis `ecommerce/`, lancer le script avec un profil `integration` qui pointe vers le même fichier DuckDB :
 
 ```bash
 bash integration_tests/test_orders_incremental.sh
 ```
 
-Le script charge un premier état des commandes, vérifie le résultat après une première construction, charge un état suivant puis contrôle les insertions, les mises à jour et l'idempotence d'une nouvelle exécution.
+Le script charge successivement les deux fixtures via `dbt run-operation --sql`, puis interroge le résultat avec `dbt show --inline --output json`. Il vérifie l'état initial, l'UPDATE de la commande `9902`, l'INSERT de `9903`, l'absence de doublons et l'idempotence d'une nouvelle exécution.
 
-**Attention :** ce test supprime les schémas `integration_raw`, `dbt_integration_staging` et `dbt_integration_marts` au début et à la fin de son exécution. Il est conçu pour une base dédiée à l'intégration, jamais pour une base contenant des données à conserver.
+**Attention :** le test supprime les schémas `integration_raw`, `dbt_integration_staging` et `dbt_integration_marts` dans le fichier DuckDB ciblé. Utiliser une base dédiée à l'intégration, jamais une base contenant des données à conserver.
+
+## Ancien exercice PostgreSQL
+
+`launch-postgres.sh` et `init-db.sql` sont conservés pour rejouer l'exercice V1 avec PostgreSQL. Ils ne sont utilisés ni par le test d'intégration actuel ni par la CI dbt V2.
 
 ## Parcours suggéré
 
@@ -95,4 +116,4 @@ Le script charge un premier état des commandes, vérifie le résultat après un
 4. Étudier `orders_incremental.sql`, puis les fixtures `orders_n.sql` et `orders_n_plus_1.sql`.
 5. Modifier une transformation ou une donnée d'exemple et observer l'effet avec `dbt build` et le test d'intégration.
 
-La CI GitHub Actions initialise PostgreSQL, exécute `dbt build`, puis lance le test d'intégration incrémental.
+La CI GitHub Actions installe `dbt==2.0.13`, configure les cibles `ci` et `integration` sur le même fichier DuckDB temporaire, exécute `dbt build`, puis lance le test d'intégration incrémental.
