@@ -3,7 +3,7 @@ version: 2
 sources:
   - name: ecommerce
     description: "Données brutes du système e-commerce"
-    schema: raw
+    schema: "{{ var('raw_schema', 'raw') }}"
 
     tables:
       - name: customers

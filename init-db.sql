@@ -13,8 +13,30 @@ CREATE TABLE raw.orders (
     customer_id INTEGER,
     order_date DATE,
     amount NUMERIC(8,2),
-    status TEXT
+    status TEXT,
+    row_hash TEXT
 );
+
+CREATE OR REPLACE FUNCTION raw.compute_order_hash()
+RETURNS trigger AS $$
+BEGIN
+    NEW.row_hash := md5(
+        concat_ws(
+            '|',
+            NEW.customer_id,
+            NEW.order_date,
+            NEW.amount,
+            NEW.status
+        )
+    );
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_compute_order_hash
+BEFORE INSERT OR UPDATE ON raw.orders
+FOR EACH ROW
+EXECUTE FUNCTION raw.compute_order_hash();
 
 INSERT INTO raw.customers VALUES
 (1, 'Remi', 'Verschuur', 'remi@example.com', '2026-01-10'),

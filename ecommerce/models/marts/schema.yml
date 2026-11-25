@@ -45,3 +45,45 @@ models:
         description: "Identifiant de la commande (sera NULL pour les prospects)"
         data_tests:
           - is_null
+
+unit_tests:
+
+  - name: test_orders_incremental_initial_load
+    description: "Vérifie le chargement initial des commandes dans le modèle incrémental"
+    model: orders_incremental
+
+    overrides:
+      macros:
+        is_incremental: false
+    given:
+      - input: ref('stg_orders')
+        rows:
+          - order_id: 9001
+            customer_id: 101
+            order_date: '2026-11-20'
+            amount: 100.00
+            status: 'completed'
+            row_hash: 'hash_a'
+
+          - order_id: 9002
+            customer_id: 102
+            order_date: '2026-11-21'
+            amount: 75.50
+            status: 'pending'
+            row_hash: 'hash_b'
+
+    expect:
+      rows:
+        - order_id: 9001
+          customer_id: 101
+          order_date: '2026-11-20'
+          amount: 100.00
+          status: 'completed'
+          row_hash: 'hash_a'
+
+        - order_id: 9002
+          customer_id: 102
+          order_date: '2026-11-21'
+          amount: 75.50
+          status: 'pending'
+          row_hash: 'hash_b'

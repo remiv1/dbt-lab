@@ -1,4 +1,4 @@
-podman run -d \
+podman run -d --rm \
   --name dbt-postgres \
   -e POSTGRES_USER=dbt \
   -e POSTGRES_PASSWORD=dbt \
