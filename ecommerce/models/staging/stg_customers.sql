@@ -1,13 +1,7 @@
 SELECT
     CAST(customer_id AS INT) AS customer_id,
-    TRIM(
-        REGEXP_REPLACE(first_name, '\\s+', ' ', 'g')
-    ) AS first_name,
-    UPPER(
-        TRIM(
-            REGEXP_REPLACE(last_name, '\\s+', ' ', 'g')
-        )
-    ) AS last_name,
-    LOWER(TRIM(email)) AS email,
+    {{ normalize_text('first_name', case='upper') }} AS first_name,
+    {{ normalize_text('last_name', case='upper') }} AS last_name,
+    {{ normalize_text('email', case='lower', remove_spaces=true) }} AS email,
     created_at
 FROM {{ source('ecommerce', 'customers') }}
